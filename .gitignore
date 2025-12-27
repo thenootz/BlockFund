@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Hardhat
+cache/
+artifacts/
+
+# Env
+.env
