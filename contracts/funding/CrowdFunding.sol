@@ -33,7 +33,7 @@ contract CrowdFunding {
     }
 
     constructor(
-        address tokenAddr,
+        address payable tokenAddr,
         uint256 _fundingGoal,
         address _sponsorContract,
         address _distributeContract

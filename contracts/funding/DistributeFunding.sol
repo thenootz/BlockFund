@@ -16,7 +16,7 @@ contract DistributeFunding {
         _;
     }
 
-    constructor(address tokenAddr) {
+    constructor(address payable tokenAddr) {
         require(tokenAddr != address(0), "token=0");
         token = FixedPriceToken(tokenAddr);
         owner = msg.sender;

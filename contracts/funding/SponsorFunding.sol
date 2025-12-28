@@ -13,7 +13,7 @@ contract SponsorFunding {
         _;
     }
 
-    constructor(address tokenAddr, uint256 _sponsorBps) {
+    constructor(address payable tokenAddr, uint256 _sponsorBps) {
         require(tokenAddr != address(0), "token=0");
         require(_sponsorBps <= 10_000, "bps>100%");
         owner = msg.sender;

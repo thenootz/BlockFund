@@ -1,0 +1,27 @@
+{
+  "name": "blockfund",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">   <img src=\"assets/blockfund-banner.png\" alt=\"BlockFund banner\" width=\"100%\" /> </p>",
+  "main": "hardhat.config.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thenootz/BlockFund.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/thenootz/BlockFund/issues"
+  },
+  "homepage": "https://github.com/thenootz/BlockFund#readme",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "hardhat": "^2.28.0"
+  }
+}
