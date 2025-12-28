@@ -4,8 +4,8 @@ pragma solidity ^0.8.20;
 import "../interfaces/IERC20.sol";
 
 contract FixedPriceToken is IERC20 {
-    string public name = "Lab10 Token";
-    string public symbol = "L10";
+    string public name = "BlockFund Token";
+    string public symbol = "BFT";
     uint8 public decimals = 18;
 
     uint256 private _totalSupply;
