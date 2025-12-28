@@ -119,5 +119,5 @@ contract FixedPriceToken is IERC20 {
         emit Transfer(address(0), to, value);
     }
 
-    retrive() external payable {}
+    receive() external payable {}
 }
