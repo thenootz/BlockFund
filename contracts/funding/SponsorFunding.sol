@@ -8,6 +8,9 @@ contract SponsorFunding {
     FixedPriceToken public immutable token;
     uint256 public immutable sponsorBps;
 
+    // allowlist pentru contracte CrowdFunding
+    mapping(address => bool) public allowedCrowdFunding;
+
     modifier onlyOwner() {
         require(msg.sender == owner, "only owner");
         _;
@@ -21,6 +24,13 @@ contract SponsorFunding {
         sponsorBps = _sponsorBps;
     }
 
+    // owner aproba campanii de crowdfunding care pot primi sponsorizare
+    function setAllowedCrowdFunding(address crowdFundingAddr, bool allowed) external onlyOwner {
+        require(crowdFundingAddr != address(0), "crowd=0");
+        allowedCrowdFunding[crowdFundingAddr] = allowed;
+    }
+
+    // owner poate cumpara tokeni folositi ulterior pentru sponsorizare
     function buyTokensForSponsorship(uint256 tokenAmount) external payable onlyOwner {
         require(tokenAmount > 0, "amount=0");
 
@@ -31,11 +41,12 @@ contract SponsorFunding {
         require(token.buyTokens{value: msg.value}(tokenAmount), "buy failed");
     }
 
+    // sponsorizeaza o campanie aprobata, proportional cu suma colectata
     function sponsor(address crowdFundingAddr, uint256 collectedAmount)
         external
         returns (bool sponsored, uint256 sponsorAmount)
     {
-        require(crowdFundingAddr != address(0), "crowd=0");
+        require(allowedCrowdFunding[crowdFundingAddr], "crowd not allowed");
         require(collectedAmount > 0, "collected=0");
 
         sponsorAmount = (collectedAmount * sponsorBps) / 10_000;

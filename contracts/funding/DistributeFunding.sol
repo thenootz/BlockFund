@@ -7,6 +7,9 @@ contract DistributeFunding {
     FixedPriceToken public immutable token;
     address public owner;
 
+    uint256 public totalFunds;
+    bool public fundsDeposited;
+
     mapping(address => uint256) public sharesBps;
     address[] public shareholders;
     mapping(address => bool) public claimed;
@@ -29,15 +32,23 @@ contract DistributeFunding {
         sharesBps[a] = bps;
     }
 
+    // apelata dupa ce CrowdFunding a transferat tokenii
+    function depositFromCrowdfunding(uint256 amount) external {
+        require(!fundsDeposited, "already deposited");
+        require(amount > 0, "amount=0");
+
+        fundsDeposited = true;
+        totalFunds = amount;
+    }
+
     function claim() external {
+        require(fundsDeposited, "funds not deposited");
         require(!claimed[msg.sender], "already claimed");
+
         uint256 bps = sharesBps[msg.sender];
         require(bps > 0, "not shareholder");
 
-        uint256 pool = token.balanceOf(address(this));
-        require(pool > 0, "no funds");
-
-        uint256 amount = (pool * bps) / 10_000;
+        uint256 amount = (totalFunds * bps) / 10_000;
         require(amount > 0, "amount=0");
 
         claimed[msg.sender] = true;
