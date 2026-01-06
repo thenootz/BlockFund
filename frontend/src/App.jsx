@@ -11,62 +11,102 @@ import {
   TrendingUp,
   Award,
 } from "lucide-react";
+import { ethers } from "ethers";
+import { getDeployment } from "./deployments/useDeployment";
 
-/**
- * NOTE: To resolve the dependency error in this environment,
- * we use the global 'ethers' object provided by the CDN script
- * typically loaded in the HTML head.
- */
+// ======================================================
+// DEPLOYMENT CONFIG
+// ======================================================
+const DEPLOYMENT = getDeployment();
 
-// --- CONFIGURATION & ABIs ---
 const CONTRACT_ADDRESSES = {
-  FixedPriceToken: "0x0000000000000000000000000000000000000001",
-  CrowdFunding: "0x0000000000000000000000000000000000000002",
-  SponsorFunding: "0x0000000000000000000000000000000000000003",
-  DistributeFunding: "0x0000000000000000000000000000000000000004",
-  OwnerAddress: "0xYourOwnerAddressHere",
+  FixedPriceToken: DEPLOYMENT.token,
+  CrowdFunding: DEPLOYMENT.crowdFunding,
+  SponsorFunding: DEPLOYMENT.sponsorFunding,
+  DistributeFunding: DEPLOYMENT.distributeFunding,
+  OwnerAddress: DEPLOYMENT.owner,
 };
 
+// ======================================================
+// ABIs
+// ======================================================
 const ERC20_ABI = [
   "function buyTokens(uint256 amount) payable",
-  "function tokenPriceWei() public view returns (uint256)",
+  "function tokenPriceWei() view returns (uint256)",
   "function balanceOf(address owner) view returns (uint256)",
   "function approve(address spender, uint256 amount) returns (bool)",
-  "function decimals() view returns (uint8)",
 ];
 
 const CROWDFUNDING_ABI = [
   "function fundingGoal() view returns (uint256)",
   "function totalCollected() view returns (uint256)",
   "function fundingState() view returns (string)",
-  "function contribute(uint256 amount) public",
-  "function withdraw(uint256 amount) public",
-  "function finalizeAndRequestSponsorship() public",
-  "function transferToDistribute() public",
-];
-
-const SPONSOR_ABI = [
-  "function setAllowedCrowdFunding(address target, bool allowed) public",
-  "function buyTokensForSponsorship(uint256 amount) payable",
+  "function contribute(uint256 amount)",
+  "function withdraw(uint256 amount)",
+  "function finalizeAndRequestSponsorship()",
+  "function transferToDistribute()",
 ];
 
 const DISTRIBUTE_ABI = [
-  "function addOrUpdateShareholder(address holder, uint256 bps) public",
-  "function claim() public",
+  "function claim()",
   "function sharesBps(address) view returns (uint256)",
   "function claimed(address) view returns (uint256)",
 ];
 
-// --- UTILS ---
+const SPONSOR_ABI = [
+  "function setAllowedCrowdFunding(address crowdFunding, bool allowed)",
+];
+
+// ======================================================
+// UTILS
+// ======================================================
 const formatAddr = (addr) =>
   addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : "";
 
+// ======================================================
+// RENDER HELPERS
+// ======================================================
+const ProgressCircle = ({ current, goal }) => {
+  const percent =
+    Math.min(Math.round((parseFloat(current) / parseFloat(goal)) * 100), 100) ||
+    0;
+  return (
+    <div className="flex flex-col items-center">
+      <div className="relative w-24 h-24">
+        <svg className="w-full h-full" viewBox="0 0 36 36">
+          <path
+            className="text-gray-200 stroke-current"
+            strokeWidth="3"
+            fill="none"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
+          <path
+            className="text-indigo-600 stroke-current"
+            strokeDasharray={`${percent}, 100`}
+            strokeWidth="3"
+            strokeLinecap="round"
+            fill="none"
+            d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center font-bold text-lg">
+          {percent}%
+        </div>
+      </div>
+      <p className="mt-2 text-sm text-gray-500 font-medium">Goal reached</p>
+    </div>
+  );
+};
+
+// ======================================================
+// APP
+// ======================================================
 const App = () => {
-  // State: Connection
+  // Wallet
   const [account, setAccount] = useState(null);
   const [isOwner, setIsOwner] = useState(false);
 
-  // State: Contract Data
+  // Data
   const [tokenBalance, setTokenBalance] = useState("0");
   const [tokenPrice, setTokenPrice] = useState("0");
   const [crowdData, setCrowdData] = useState({
@@ -76,7 +116,7 @@ const App = () => {
   });
   const [userData, setUserData] = useState({ shares: "0", claimed: "0" });
 
-  // UI State
+  // UI
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ text: "", type: "" });
 
@@ -89,81 +129,69 @@ const App = () => {
     setTimeout(() => setStatusMsg({ text: "", type: "" }), 5000);
   };
 
-  // Helper to get ethers from window (as it's often injected via script tag in these environments)
-  const getEthers = () => {
-    if (window.ethers) return window.ethers;
-    // Fallback: This allows the code to be descriptive even if the global isn't ready
-    return null;
-  };
-
-  // --- LOGIC: Connection ---
   const connectWallet = async () => {
-    if (!window.ethereum) return showStatus("MetaMask not found", "error");
-    const eth = getEthers();
-    if (!eth) return showStatus("Ethers library loading...", "error");
-
+    if (!window.ethereum) {
+      showStatus("MetaMask not found", "error");
+      return;
+    }
     try {
-      const _provider = new eth.providers.Web3Provider(window.ethereum);
-      const accounts = await _provider.send("eth_requestAccounts", []);
-      setAccount(accounts[0]);
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const address = await signer.getAddress();
+      setAccount(address);
       setIsOwner(
-        accounts[0].toLowerCase() ===
-          CONTRACT_ADDRESSES.OwnerAddress.toLowerCase()
+        address.toLowerCase() === CONTRACT_ADDRESSES.OwnerAddress.toLowerCase()
       );
     } catch (err) {
+      console.error(err);
       showStatus("Connection failed", "error");
     }
   };
 
-  // --- LOGIC: Fetch Data ---
   const fetchData = useCallback(async () => {
-    const eth = getEthers();
-    if (!eth || !account || !window.ethereum) return;
-
+    if (!account || !window.ethereum) return;
     try {
-      const _provider = new eth.providers.Web3Provider(window.ethereum);
-      const _signer = _provider.getSigner();
-
-      const tokenContract = new eth.Contract(
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const token = new ethers.Contract(
         CONTRACT_ADDRESSES.FixedPriceToken,
         ERC20_ABI,
-        _signer
+        provider
       );
-      const crowdContract = new eth.Contract(
+      const crowd = new ethers.Contract(
         CONTRACT_ADDRESSES.CrowdFunding,
         CROWDFUNDING_ABI,
-        _signer
+        provider
       );
-      const distContract = new eth.Contract(
+      const dist = new ethers.Contract(
         CONTRACT_ADDRESSES.DistributeFunding,
         DISTRIBUTE_ABI,
-        _signer
+        provider
       );
 
       const [balance, price, goal, total, state, shares, claimed] =
         await Promise.all([
-          tokenContract.balanceOf(account),
-          tokenContract.tokenPriceWei(),
-          crowdContract.fundingGoal(),
-          crowdContract.totalCollected(),
-          crowdContract.fundingState(),
-          distContract.sharesBps(account),
-          distContract.claimed(account),
+          token.balanceOf(account),
+          token.tokenPriceWei(),
+          crowd.fundingGoal(),
+          crowd.totalCollected(),
+          crowd.fundingState(),
+          dist.sharesBps(account),
+          dist.claimed(account),
         ]);
 
-      setTokenBalance(eth.utils.formatEther(balance));
-      setTokenPrice(eth.utils.formatEther(price));
+      setTokenBalance(ethers.formatEther(balance));
+      setTokenPrice(ethers.formatEther(price));
       setCrowdData({
-        goal: eth.utils.formatEther(goal),
-        total: eth.utils.formatEther(total),
-        state: state,
+        goal: ethers.formatEther(goal),
+        total: ethers.formatEther(total),
+        state,
       });
       setUserData({
         shares: shares.toString(),
-        claimed: eth.utils.formatEther(claimed),
+        claimed: ethers.formatEther(claimed),
       });
     } catch (err) {
-      console.error("Data fetch error", err);
+      console.error("Fetch error:", err);
     }
   }, [account]);
 
@@ -171,136 +199,137 @@ const App = () => {
     if (account) fetchData();
   }, [account, fetchData]);
 
-  // --- LOGIC: Transactions ---
   const handleBuyTokens = async () => {
-    const eth = getEthers();
-    if (!buyAmount || !eth) return;
+    if (!buyAmount) return;
     setLoading(true);
     try {
-      const _provider = new eth.providers.Web3Provider(window.ethereum);
-      const _signer = _provider.getSigner();
-      const contract = new eth.Contract(
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const token = new ethers.Contract(
         CONTRACT_ADDRESSES.FixedPriceToken,
         ERC20_ABI,
-        _signer
+        signer
       );
 
-      const amountWei = eth.utils.parseEther(buyAmount.toString());
-      const priceWei = eth.utils.parseEther(tokenPrice.toString());
-      const cost = amountWei.mul(priceWei).div(eth.utils.parseEther("1"));
+      const amount = ethers.parseEther(buyAmount);
+      const price = ethers.parseEther(tokenPrice);
+      const cost = (amount * price) / ethers.parseUnits("1", 18);
 
-      const tx = await contract.buyTokens(amountWei, { value: cost });
+      const tx = await token.buyTokens(amount, { value: cost });
       await tx.wait();
-      showStatus("Tokens purchased successfully!", "success");
+      showStatus("Tokens purchased", "success");
       fetchData();
     } catch (err) {
-      showStatus("Transaction failed", "error");
+      console.error(err);
+      showStatus("Buy failed", "error");
     }
     setLoading(false);
   };
 
   const handleContribute = async () => {
-    const eth = getEthers();
-    if (!eth) return;
+    if (!contributeAmount) return;
     setLoading(true);
     try {
-      const _provider = new eth.providers.Web3Provider(window.ethereum);
-      const _signer = _provider.getSigner();
-      const tokenContract = new eth.Contract(
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const token = new ethers.Contract(
         CONTRACT_ADDRESSES.FixedPriceToken,
         ERC20_ABI,
-        _signer
+        signer
       );
-      const crowdContract = new eth.Contract(
+      const crowd = new ethers.Contract(
         CONTRACT_ADDRESSES.CrowdFunding,
         CROWDFUNDING_ABI,
-        _signer
+        signer
       );
 
-      const amountWei = eth.utils.parseEther(contributeAmount.toString());
-      const approveTx = await tokenContract.approve(
+      const amount = ethers.parseEther(contributeAmount);
+      const approveTx = await token.approve(
         CONTRACT_ADDRESSES.CrowdFunding,
-        amountWei
+        amount
       );
       await approveTx.wait();
 
-      const tx = await crowdContract.contribute(amountWei);
+      const tx = await crowd.contribute(amount);
       await tx.wait();
-
       showStatus("Contribution successful", "success");
       fetchData();
     } catch (err) {
+      console.error(err);
       showStatus("Contribution failed", "error");
     }
     setLoading(false);
   };
 
   const handleClaim = async () => {
-    const eth = getEthers();
-    if (!eth) return;
     setLoading(true);
     try {
-      const _provider = new eth.providers.Web3Provider(window.ethereum);
-      const _signer = _provider.getSigner();
-      const contract = new eth.Contract(
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const dist = new ethers.Contract(
         CONTRACT_ADDRESSES.DistributeFunding,
         DISTRIBUTE_ABI,
-        _signer
+        signer
       );
-      const tx = await contract.claim();
+      const tx = await dist.claim();
       await tx.wait();
-      showStatus("Rewards claimed!", "success");
+      showStatus("Rewards claimed", "success");
       fetchData();
     } catch (err) {
+      console.error(err);
       showStatus("Claim failed", "error");
     }
     setLoading(false);
   };
 
-  // --- RENDER HELPERS ---
-  const ProgressCircle = ({ current, goal }) => {
-    const percent =
-      Math.min(
-        Math.round((parseFloat(current) / parseFloat(goal)) * 100),
-        100
-      ) || 0;
-    return (
-      <div className="flex flex-col items-center">
-        <div className="relative w-24 h-24">
-          <svg className="w-full h-full" viewBox="0 0 36 36">
-            <path
-              className="text-gray-200 stroke-current"
-              strokeWidth="3"
-              fill="none"
-              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-            />
-            <path
-              className="text-indigo-600 stroke-current"
-              strokeDasharray={`${percent}, 100`}
-              strokeWidth="3"
-              strokeLinecap="round"
-              fill="none"
-              d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center font-bold text-lg">
-            {percent}%
-          </div>
-        </div>
-        <p className="mt-2 text-sm text-gray-500 font-medium">Goal reached</p>
-      </div>
-    );
+  // ======================================================
+  // OWNER ACTIONS (Standardized to Ethers v6)
+  // ======================================================
+  const ownerAction = async (actionType) => {
+    setLoading(true);
+    try {
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      let tx;
+
+      if (actionType === "approve") {
+        const sponsor = new ethers.Contract(
+          CONTRACT_ADDRESSES.SponsorFunding,
+          SPONSOR_ABI,
+          signer
+        );
+        tx = await sponsor.setAllowedCrowdFunding(
+          CONTRACT_ADDRESSES.CrowdFunding,
+          true
+        );
+      } else if (actionType === "finalize") {
+        const crowd = new ethers.Contract(
+          CONTRACT_ADDRESSES.CrowdFunding,
+          CROWDFUNDING_ABI,
+          signer
+        );
+        tx = await crowd.finalizeAndRequestSponsorship();
+      } else if (actionType === "transfer") {
+        const crowd = new ethers.Contract(
+          CONTRACT_ADDRESSES.CrowdFunding,
+          CROWDFUNDING_ABI,
+          signer
+        );
+        tx = await crowd.transferToDistribute();
+      }
+
+      await tx.wait();
+      showStatus("Action successful", "success");
+      fetchData();
+    } catch (err) {
+      console.error(err);
+      showStatus("Action failed", "error");
+    }
+    setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans p-4 md:p-8">
-      {/* Script injection for environments where ethers isn't pre-installed */}
-      <script
-        src="https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.umd.min.js"
-        type="application/javascript"
-      ></script>
-
-      {/* Header */}
       <header className="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-indigo-900 flex items-center gap-2">
@@ -340,7 +369,6 @@ const App = () => {
         )}
       </header>
 
-      {/* Status Toasts */}
       {statusMsg.text && (
         <div
           className={`fixed top-4 right-4 z-50 p-4 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce border ${
@@ -356,7 +384,7 @@ const App = () => {
 
       <main className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {/* Panel 1: Buy Tokens */}
-        <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+        <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 bg-amber-100 text-amber-600 rounded-2xl">
               <Coins />
@@ -367,18 +395,13 @@ const App = () => {
             Price: {tokenPrice} ETH per token
           </p>
           <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-400 mb-1 uppercase ml-1">
-                Token Amount
-              </label>
-              <input
-                type="number"
-                value={buyAmount}
-                onChange={(e) => setBuyAmount(e.target.value)}
-                placeholder="0.0"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-              />
-            </div>
+            <input
+              type="number"
+              value={buyAmount}
+              onChange={(e) => setBuyAmount(e.target.value)}
+              placeholder="0.0"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
             <div className="bg-indigo-50 p-4 rounded-xl">
               <div className="flex justify-between text-sm">
                 <span className="text-indigo-600 font-medium">
@@ -395,7 +418,7 @@ const App = () => {
             <button
               disabled={loading || !account || !buyAmount}
               onClick={handleBuyTokens}
-              className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 disabled:opacity-50"
             >
               {loading ? "Processing..." : "Purchase Tokens"}
             </button>
@@ -423,7 +446,6 @@ const App = () => {
               </div>
             </div>
           </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
             <div className="space-y-6">
               <div className="flex justify-between items-end border-b pb-4">
@@ -445,66 +467,32 @@ const App = () => {
                   </p>
                 </div>
               </div>
-
-              {crowdData.state === "nefinantat" ? (
-                <div className="space-y-3">
-                  <input
-                    type="number"
-                    value={contributeAmount}
-                    onChange={(e) => setContributeAmount(e.target.value)}
-                    placeholder="Contribution amount..."
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none"
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleContribute}
-                      disabled={loading || !account || !contributeAmount}
-                      className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 flex items-center justify-center gap-2"
-                    >
-                      <ArrowUpCircle size={18} /> Contribute
-                    </button>
-                    <button
-                      onClick={async () => {
-                        const eth = getEthers();
-                        const _provider = new eth.providers.Web3Provider(
-                          window.ethereum
-                        );
-                        const _signer = _provider.getSigner();
-                        const crowdContract = new eth.Contract(
-                          CONTRACT_ADDRESSES.CrowdFunding,
-                          CROWDFUNDING_ABI,
-                          _signer
-                        );
-                        const tx = await crowdContract.withdraw(
-                          eth.utils.parseEther(contributeAmount)
-                        );
-                        await tx.wait();
-                        fetchData();
-                      }}
-                      disabled={loading || !account || !contributeAmount}
-                      className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl font-bold hover:bg-slate-200 flex items-center justify-center gap-2"
-                    >
-                      <ArrowDownCircle size={18} /> Withdraw
-                    </button>
-                  </div>
+              <div className="space-y-3">
+                <input
+                  type="number"
+                  value={contributeAmount}
+                  onChange={(e) => setContributeAmount(e.target.value)}
+                  placeholder="Amount..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 outline-none"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleContribute}
+                    disabled={loading || !account}
+                    className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold hover:bg-indigo-700 flex items-center justify-center gap-2"
+                  >
+                    <ArrowUpCircle size={18} /> Contribute
+                  </button>
                 </div>
-              ) : (
-                <div className="p-4 bg-green-50 rounded-xl border border-green-100 flex items-center gap-3 text-green-700">
-                  <CheckCircle2 />
-                  <span className="font-medium text-sm">
-                    Funding Phase Complete. No more contributions accepted.
-                  </span>
-                </div>
-              )}
+              </div>
             </div>
-
             <div className="flex justify-center">
               <ProgressCircle current={crowdData.total} goal={crowdData.goal} />
             </div>
           </div>
         </section>
 
-        {/* Panel 3: Distribution */}
+        {/* Panel 3: Rewards */}
         <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
           <div className="flex items-center gap-3 mb-6">
             <div className="p-3 bg-purple-100 text-purple-600 rounded-2xl">
@@ -513,17 +501,17 @@ const App = () => {
             <h2 className="text-xl font-bold">My Rewards</h2>
           </div>
           <div className="space-y-4 mb-6">
-            <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className="flex justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
               <span className="text-sm text-slate-500 font-medium">
-                Your Shares (BPS)
+                Shares (BPS)
               </span>
               <span className="font-black text-purple-600">
                 {userData.shares} / 10000
               </span>
             </div>
-            <div className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100">
+            <div className="flex justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
               <span className="text-sm text-slate-500 font-medium">
-                Total Claimed
+                Claimed
               </span>
               <span className="font-black">{userData.claimed} BFT</span>
             </div>
@@ -531,13 +519,13 @@ const App = () => {
           <button
             onClick={handleClaim}
             disabled={loading || !account || userData.shares === "0"}
-            className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-lg shadow-purple-100"
+            className="w-full py-4 bg-purple-600 text-white rounded-xl font-bold hover:bg-purple-700 shadow-lg shadow-purple-100"
           >
             Claim Earnings
           </button>
         </section>
 
-        {/* Panel 4: Owner Actions (Conditional) */}
+        {/* Panel 4: Owner Actions */}
         {isOwner && (
           <section className="bg-slate-900 text-white p-6 rounded-3xl shadow-xl lg:col-span-2">
             <div className="flex items-center gap-3 mb-6">
@@ -548,83 +536,27 @@ const App = () => {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button
-                onClick={async () => {
-                  const eth = getEthers();
-                  const _provider = new eth.providers.Web3Provider(
-                    window.ethereum
-                  );
-                  const _signer = _provider.getSigner();
-                  const sponsor = new eth.Contract(
-                    CONTRACT_ADDRESSES.SponsorFunding,
-                    SPONSOR_ABI,
-                    _signer
-                  );
-                  const tx = await sponsor.setAllowedCrowdFunding(
-                    CONTRACT_ADDRESSES.CrowdFunding,
-                    true
-                  );
-                  await tx.wait();
-                  showStatus("CrowdFunding Approved in Sponsor");
-                }}
-                className="p-4 bg-slate-800 rounded-2xl border border-slate-700 hover:bg-slate-700 text-sm font-semibold transition-all text-left"
+                onClick={() => ownerAction("approve")}
+                className="p-4 bg-slate-800 rounded-2xl border border-slate-700 hover:bg-slate-700 text-sm font-semibold transition-all"
               >
                 1. Approve CrowdFunding in Sponsor
               </button>
               <button
-                onClick={async () => {
-                  const eth = getEthers();
-                  const _provider = new eth.providers.Web3Provider(
-                    window.ethereum
-                  );
-                  const _signer = _provider.getSigner();
-                  const crowd = new eth.Contract(
-                    CONTRACT_ADDRESSES.CrowdFunding,
-                    CROWDFUNDING_ABI,
-                    _signer
-                  );
-                  const tx = await crowd.finalizeAndRequestSponsorship();
-                  await tx.wait();
-                  fetchData();
-                  showStatus("Sponsorship Requested");
-                }}
-                className="p-4 bg-indigo-600 rounded-2xl border border-indigo-500 hover:bg-indigo-500 text-sm font-semibold transition-all text-left"
+                onClick={() => ownerAction("finalize")}
+                className="p-4 bg-indigo-600 rounded-2xl border border-indigo-500 hover:bg-indigo-500 text-sm font-semibold transition-all"
               >
                 2. Finalize & Request Sponsorship
               </button>
               <button
-                onClick={async () => {
-                  const eth = getEthers();
-                  const _provider = new eth.providers.Web3Provider(
-                    window.ethereum
-                  );
-                  const _signer = _provider.getSigner();
-                  const crowd = new eth.Contract(
-                    CONTRACT_ADDRESSES.CrowdFunding,
-                    CROWDFUNDING_ABI,
-                    _signer
-                  );
-                  const tx = await crowd.transferToDistribute();
-                  await tx.wait();
-                  fetchData();
-                  showStatus("Funds Transferred to Distribution");
-                }}
-                className="p-4 bg-green-600 rounded-2xl border border-green-500 hover:bg-green-500 text-sm font-semibold transition-all text-left"
+                onClick={() => ownerAction("transfer")}
+                className="p-4 bg-green-600 rounded-2xl border border-green-500 hover:bg-green-500 text-sm font-semibold transition-all"
               >
                 3. Move Funds to Distribution
               </button>
-              <div className="p-4 bg-slate-800 rounded-2xl border border-slate-700 flex flex-col justify-center">
-                <span className="text-xs text-slate-400 uppercase font-bold">
-                  System Integrity
-                </span>
-                <span className="text-green-400 text-sm font-medium">
-                  All Contracts Connected
-                </span>
-              </div>
             </div>
           </section>
         )}
       </main>
-
       <footer className="max-w-6xl mx-auto mt-16 text-center text-slate-400 text-sm pb-8">
         &copy; 2024 BlockFund DApp &bull; Built with React & Ethers.js
       </footer>
