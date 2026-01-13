@@ -1,4 +1,8 @@
-/* scripts/deploy.js (Hardhat 2 + CommonJS)
+/* scripts/deploy.js
+ *
+ * Compatible with:
+ * - Hardhat >= 2.19
+ * - ethers v6
  *
  * Deploy order:
  * 1) FixedPriceToken
@@ -11,8 +15,9 @@ const hre = require("hardhat");
 const fs = require("fs");
 const path = require("path");
 
+// Helper: convert token amounts (18 decimals)
 function toTokens(amountStr) {
-  return hre.ethers.utils.parseUnits(amountStr, 18);
+  return hre.ethers.parseUnits(amountStr, 18);
 }
 
 async function main() {
@@ -23,50 +28,77 @@ async function main() {
   console.log("Deploying with:", deployer.address);
   console.log("Network chainId:", chainId);
 
-  // ===== CONFIG (edit if needed) =====
-  const INITIAL_SUPPLY = toTokens("1000000");            // 1,000,000 tokens
-  const TOKEN_PRICE_WEI = hre.ethers.utils.parseEther("0.0001"); // 0.0001 ETH per token
-  const FUNDING_GOAL = toTokens("10000");                // 10,000 tokens goal
-  const SPONSOR_BPS = 1000;                              // 10%
+  // ===== CONFIG =====
+  const INITIAL_SUPPLY = toTokens("1000000"); // 1,000,000 tokens
+  const TOKEN_PRICE_WEI = hre.ethers.parseEther("0.0001"); // 0.0001 ETH / token
+  const FUNDING_GOAL = toTokens("10000"); // 10,000 tokens
+  const SPONSOR_BPS = 1000; // 10% (basis points)
 
-  // 1) Token
+  // ============================================================
+  // 1) FixedPriceToken
+  // ============================================================
   const Token = await hre.ethers.getContractFactory("FixedPriceToken");
   const token = await Token.deploy(INITIAL_SUPPLY, TOKEN_PRICE_WEI);
-  await token.deployed();
-  console.log("FixedPriceToken deployed:", token.address);
+  await token.waitForDeployment();
+  const tokenAddress = await token.getAddress();
 
+  console.log("FixedPriceToken deployed:", tokenAddress);
+
+  // ============================================================
   // 2) DistributeFunding
+  // ============================================================
   const Distribute = await hre.ethers.getContractFactory("DistributeFunding");
-  const distribute = await Distribute.deploy(token.address);
-  await distribute.deployed();
-  console.log("DistributeFunding deployed:", distribute.address);
+  const distribute = await Distribute.deploy(tokenAddress);
+  await distribute.waitForDeployment();
+  const distributeAddress = await distribute.getAddress();
 
+  console.log("DistributeFunding deployed:", distributeAddress);
+
+  // ============================================================
   // 3) SponsorFunding
+  // ============================================================
   const Sponsor = await hre.ethers.getContractFactory("SponsorFunding");
-  const sponsor = await Sponsor.deploy(token.address, SPONSOR_BPS);
-  await sponsor.deployed();
-  console.log("SponsorFunding deployed:", sponsor.address);
+  const sponsor = await Sponsor.deploy(tokenAddress, SPONSOR_BPS);
+  await sponsor.waitForDeployment();
+  const sponsorAddress = await sponsor.getAddress();
 
+  console.log("SponsorFunding deployed:", sponsorAddress);
+
+  // ============================================================
   // 4) CrowdFunding
+  // ============================================================
   const Crowd = await hre.ethers.getContractFactory("CrowdFunding");
-  const crowd = await Crowd.deploy(token.address, FUNDING_GOAL, sponsor.address, distribute.address);
-  await crowd.deployed();
-  console.log("CrowdFunding deployed:", crowd.address);
+  const crowd = await Crowd.deploy(
+    tokenAddress,
+    FUNDING_GOAL,
+    sponsorAddress,
+    distributeAddress
+  );
+  await crowd.waitForDeployment();
+  const crowdAddress = await crowd.getAddress();
 
+  console.log("CrowdFunding deployed:", crowdAddress);
+
+  // ============================================================
+  // SUMMARY
+  // ============================================================
   console.log("\n=== Deployment summary ===");
-  console.log("Token:      ", token.address);
-  console.log("Sponsor:    ", sponsor.address);
-  console.log("Distribute: ", distribute.address);
-  console.log("Crowd:      ", crowd.address);
+  console.log("Token:      ", tokenAddress);
+  console.log("Sponsor:    ", sponsorAddress);
+  console.log("Distribute: ", distributeAddress);
+  console.log("Crowd:      ", crowdAddress);
 
-  // (Optional) write frontend deployments file if folder exists
+  // ============================================================
+  // Write frontend deployment file (optional)
+  // frontend/src/deployments/31337.json
+  // ============================================================
   const out = {
     chainId,
     deployer: deployer.address,
-    token: token.address,
-    sponsorFunding: sponsor.address,
-    distributeFunding: distribute.address,
-    crowdFunding: crowd.address,
+    token: tokenAddress,
+    sponsorFunding: sponsorAddress,
+    distributeFunding: distributeAddress,
+    crowdFunding: crowdAddress,
     config: {
       initialSupply: INITIAL_SUPPLY.toString(),
       tokenPriceWei: TOKEN_PRICE_WEI.toString(),
@@ -83,7 +115,9 @@ async function main() {
     fs.writeFileSync(outFile, JSON.stringify(out, null, 2));
     console.log("\nWrote frontend deployments file:", outFile);
   } catch (e) {
-    console.log("\n(Info) frontend folder not found, skipping deployments json.");
+    console.log(
+      "\n(Info) frontend folder not found, skipping deployments json."
+    );
   }
 }
 
